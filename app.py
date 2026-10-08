@@ -21,7 +21,7 @@ from langgraph.graph import StateGraph, START, END
 # ============================================================
 
 st.set_page_config(
-    page_title="Tathagata The AI Used Car Advisor and Price Predictor.",
+    page_title="Tathagata The Used Car Advisor and Price Predictor.",
     page_icon="🚗",
     layout="wide"
 )
@@ -63,7 +63,7 @@ checkpointer = SqliteSaver(conn)
 # TITLE
 # ============================================================
 
-st.title("🚗 Tathagata The AI Used Car Advisor and Price Predictor.")
+st.title("🚗 Tathagata The Used Car Advisor and Price Predictor.")
 
 st.sidebar.title("🚗 Car Price Prediction and Advisor")
 
