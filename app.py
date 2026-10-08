@@ -3,7 +3,7 @@ import requests
 import sqlite3
 
 from langchain_groq import ChatGroq
-from langchain.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from typing import TypedDict, Annotated
 
