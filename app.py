@@ -65,7 +65,7 @@ checkpointer = SqliteSaver(conn)
 
 st.title("🚗 AI-powered used-car price and purchase recommendation system.")
 
-st.sidebar.title("🚗 Car Price Prediction and Advisor")
+st.sidebar.title("🚗 used-car price and purchase recommendation system.")
 
 
 # ============================================================
