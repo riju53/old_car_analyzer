@@ -1,6 +1,17 @@
 import streamlit as st
-import pandas as pd
+import requests
+import sqlite3
 
+from langchain_groq import ChatGroq
+from langchain.checkpoint.sqlite import SqliteSaver
+
+from typing import TypedDict, Annotated
+
+from langchain_core.messages import BaseMessage
+from langchain_core.tools import tool
+from langgraph.graph.message import add_messages
+
+from langchain_community.tools import DuckDuckGoSearchRun
 
 from langgraph.graph import StateGraph, START, END
 
@@ -10,49 +21,35 @@ from langgraph.graph import StateGraph, START, END
 # ============================================================
 
 st.set_page_config(
-    page_title="AI Used Car Advisor",
+    page_title="Car Price Predictor",
     page_icon="🚗",
     layout="wide"
 )
 
 
 # ============================================================
-# TITLE
+# API CONFIGURATION
 # ============================================================
 
-st.title("🚗 AI Used Car Price & Purchase Advisor")
+api_url = "https://car-prediction-fastapi-2.onrender.com/predict"
 
-st.markdown(
-    """
-    ### LangGraph + Machine Learning + Web Research
 
-    This application combines:
+# ============================================================
+# GROQ MODEL
+# ============================================================
 
-    - 🤖 Groq LLM
-    - 🧠 LangGraph
-    - 📊 Machine Learning price prediction
-    - 🌐 DuckDuckGo web research
-    - 🚗 Used-car purchase recommendation
-    """
-)
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-import joblib
-ml_model = joblib.load("car_predictor.pkl")
-
-print("ML model loaded successfully.")
-
-from langchain_groq import ChatGroq
-GROQ_API_KEY = "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"
 model = ChatGroq(
     model_name="openai/gpt-oss-120b",
     groq_api_key=GROQ_API_KEY,
     temperature=0.2
 )
-print("Groq model initialized.")
 
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
+# ============================================================
+# SQLITE CHECKPOINTER
+# ============================================================
 
 conn = sqlite3.connect(
     "langgraph.db",
@@ -61,9 +58,116 @@ conn = sqlite3.connect(
 
 checkpointer = SqliteSaver(conn)
 
-from typing import TypedDict, Annotated
-from langchain_core.messages import BaseMessage, HumanMessage
-from langgraph.graph.message import add_messages
+
+# ============================================================
+# TITLE
+# ============================================================
+
+st.title("🚗 Car Price Prediction")
+
+st.sidebar.title("🚗 Car Price Prediction")
+
+
+# ============================================================
+# SIDEBAR INPUTS
+# ============================================================
+
+Brand = st.sidebar.selectbox(
+    "Brand",
+    [
+        'Hyundai',
+        'Volkswagen',
+        'Toyota',
+        'Honda',
+        'Maruti',
+        'Mahindra',
+        'Tata',
+        'Kia'
+    ]
+)
+
+
+Car_Age = st.sidebar.number_input(
+    "Car Age",
+    min_value=0,
+    max_value=12,
+    value=9
+)
+
+
+Kilometers_Driven = st.sidebar.number_input(
+    "Kilometers Driven",
+    min_value=0,
+    value=31788
+)
+
+
+Engine_CC = st.sidebar.number_input(
+    "Engine_CC",
+    min_value=0,
+    value=1498
+)
+
+
+Mileage_KMPL = st.sidebar.number_input(
+    "Mileage_KMPL",
+    min_value=0.0,
+    value=20.7
+)
+
+
+Fuel_Type = st.sidebar.selectbox(
+    "Fuel_Type",
+    [
+        'Petrol',
+        'Diesel',
+        'CNG',
+        'Electric'
+    ]
+)
+
+
+Transmission = st.sidebar.selectbox(
+    "Transmission",
+    [
+        'Manual',
+        'Automatic'
+    ]
+)
+
+
+Previous_Owners = st.sidebar.number_input(
+    "Previous_Owners",
+    min_value=0,
+    value=2
+)
+
+
+Seats = st.sidebar.number_input(
+    "Seats",
+    min_value=1,
+    value=7
+)
+
+
+Location = st.sidebar.selectbox(
+    "Location",
+    [
+        'Delhi',
+        'Pune',
+        'Kolkata',
+        'Hyderabad',
+        'Chennai',
+        'Durgapur',
+        'Bengaluru',
+        'Mumbai'
+    ]
+)
+
+
+# ============================================================
+# CHAT STATE
+# ============================================================
 
 class ChatState(TypedDict, total=False):
 
@@ -177,11 +281,11 @@ User input:
     print("\n==============================")
     print("LLM EXTRACTION")
     print("==============================")
+
     print(response.content)
 
     response_text = response.content.strip()
 
-    # Remove accidental markdown/code formatting
     response_text = (
         response_text
         .replace("```", "")
@@ -193,31 +297,43 @@ User input:
         for v in response_text.split(",")
     ]
 
-    # Ensure exactly 10 values
     while len(values) < 10:
         values.append("0")
 
     values = values[:10]
 
     return {
+
         "Brand": str(values[0]),
+
         "Car_Age": float(values[1]),
+
         "Kilometers_Driven": float(values[2]),
+
         "Engine_CC": float(values[3]),
+
         "Mileage_KMPL": float(values[4]),
+
         "Fuel_Type": str(values[5]),
+
         "Transmission": str(values[6]),
+
         "Previous_Owners": int(float(values[7])),
+
         "Seats": int(float(values[8])),
+
         "Location": str(values[9])
+
     }
 
 
+# ============================================================
 # PREDICTION NODE
+# ============================================================
 
 def prediction_node(state: ChatState):
 
-    features = pd.DataFrame([{
+    input_data = {
 
         "Brand": state["Brand"],
 
@@ -239,33 +355,44 @@ def prediction_node(state: ChatState):
 
         "Location": state["Location"]
 
-    }])
+    }
+
+    response = requests.post(
+        api_url,
+        json=input_data,
+        timeout=60
+    )
+
+    if response.status_code != 200:
+
+        raise Exception(
+            f"Prediction API Error: "
+            f"{response.status_code} - "
+            f"{response.text}"
+        )
+
+    result = response.json()
+
+    prediction = float(
+        result["predicted_category"]
+    )
 
     print("\n==============================")
-    print("MODEL INPUT")
+    print("ML PREDICTION API")
     print("==============================")
 
-    print(features)
-
-    response = ml_model.predict(features)
-
-    prediction = float(response[0])
-
-    print("\n==============================")
-    print("ML PREDICTION")
-    print("==============================")
-
-    print(f"Predicted Price: ₹{prediction:,.2f}")
+    print(
+        f"Predicted Price: ₹{prediction:,.2f}"
+    )
 
     return {
         "prediction": prediction
     }
 
 
+# ============================================================
 # DUCKDUCKGO SEARCH
-
-from langchain_community.tools import DuckDuckGoSearchRun
-from langchain_core.tools import tool
+# ============================================================
 
 search = DuckDuckGoSearchRun()
 
@@ -277,6 +404,7 @@ def purchase_or_not(
     kilometers_driven: float,
     engine_cc: float
 ):
+
     """
     Research a used car and assess whether it may be a good
     second-hand purchase.
@@ -315,7 +443,9 @@ Do not make up specific facts if reliable information is unavailable.
     return result
 
 
+# ============================================================
 # PURCHASE PREDICTION NODE
+# ============================================================
 
 def purchase_prediction(state: ChatState):
 
@@ -329,9 +459,11 @@ def purchase_prediction(state: ChatState):
 
         "car_age": state["Car_Age"],
 
-        "kilometers_driven": state["Kilometers_Driven"],
+        "kilometers_driven":
+            state["Kilometers_Driven"],
 
-        "engine_cc": state["Engine_CC"]
+        "engine_cc":
+            state["Engine_CC"]
 
     })
 
@@ -344,11 +476,15 @@ def purchase_prediction(state: ChatState):
     }
 
 
+# ============================================================
 # FINAL NODE
+# ============================================================
 
 def final_node(state: ChatState):
 
-    prediction = float(state["prediction"])
+    prediction = float(
+        state["prediction"]
+    )
 
     prompt = f"""
 You are an experienced used-car advisor.
@@ -438,265 +574,285 @@ Format the response clearly using Markdown.
 
     response = model.invoke(prompt)
 
-    print(f"Predicted Price: ₹{prediction:,.2f}")
+    print(
+        f"Predicted Price: ₹{prediction:,.2f}"
+    )
 
     return {
 
         "final_answer": response.content,
+
         "prediction": prediction
 
     }
 
 
+# ============================================================
 # LANGGRAPH
+# ============================================================
 
-def create_graph():
-
-    graph = StateGraph(ChatState)
-
-    graph.add_node(
-        "understand_input",
-        understand_input
-    )
-
-    graph.add_node(
-        "prediction_node",
-        prediction_node
-    )
-
-    graph.add_node(
-        "purchase_prediction",
-        purchase_prediction
-    )
-
-    graph.add_node(
-        "final_node",
-        final_node
-    )
-
-    graph.add_edge(
-        START,
-        "understand_input"
-    )
-
-    graph.add_edge(
-        "understand_input",
-        "prediction_node"
-    )
-
-    graph.add_edge(
-        "prediction_node",
-        "purchase_prediction"
-    )
-
-    graph.add_edge(
-        "purchase_prediction",
-        "final_node"
-    )
-
-    graph.add_edge(
-        "final_node",
-        END
-    )
-
-    app = graph.compile(
-        checkpointer=checkpointer
-    )
-
-    return app
+graph = StateGraph(ChatState)
 
 
-app = create_graph()
-
-
-# STREAMLIT INPUT
-
-st.subheader("🚘 Enter Used Car Details")
-
-question = st.text_area(
-    "Describe the car",
-    height=180,
-    placeholder="""Example:
-
-What is the car price of a Brand 'Hyundai',
-car age 9,
-kilometers driven 31788,
-engine_cc 1498,
-mileage 20.7,
-fuel type 'Petrol',
-transmission 'Manual',
-previous owner 2,
-seats 5,
-Location 'Delhi'"""
+graph.add_node(
+    "understand_input",
+    understand_input
 )
 
 
-# RUN LANGGRAPH
+graph.add_node(
+    "prediction_node",
+    prediction_node
+)
 
-if st.button(
-    "🔍 Analyze Used Car",
-    type="primary",
+
+graph.add_node(
+    "purchase_prediction",
+    purchase_prediction
+)
+
+
+graph.add_node(
+    "final_node",
+    final_node
+)
+
+
+graph.add_edge(
+    START,
+    "understand_input"
+)
+
+
+graph.add_edge(
+    "understand_input",
+    "prediction_node"
+)
+
+
+graph.add_edge(
+    "prediction_node",
+    "purchase_prediction"
+)
+
+
+graph.add_edge(
+    "purchase_prediction",
+    "final_node"
+)
+
+
+graph.add_edge(
+    "final_node",
+    END
+)
+
+
+app = graph.compile(
+    checkpointer=checkpointer
+)
+
+
+# ============================================================
+# PREDICT BUTTON
+# ============================================================
+
+if st.sidebar.button(
+    "🚗 Predict Car Price",
     use_container_width=True
 ):
 
-    if not question.strip():
+    # ========================================================
+    # CREATE QUESTION FOR YOUR LLM EXTRACTION NODE
+    # ========================================================
 
-        st.warning("Please enter the car details.")
+    question = f"""
+What is the car price of a Brand '{Brand}',
+car age {Car_Age},
+kilometers driven {Kilometers_Driven},
+engine_cc {Engine_CC},
+mileage {Mileage_KMPL},
+fuel type '{Fuel_Type}',
+transmission '{Transmission}',
+previous owner {Previous_Owners},
+seats {Seats},
+Location '{Location}'
+"""
 
-    else:
 
-        with st.spinner(
-            "🤖 LangGraph is analyzing the car..."
-        ):
+    # ========================================================
+    # SHOW INPUT
+    # ========================================================
 
-            try:
+    st.subheader("🚗 Selected Car Details")
 
-                result = app.invoke(
-                    {
-                        "question": question
-                    },
-                    config={
-                        "configurable": {
-                            "thread_id": "streamlit_user"
-                        }
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+
+        st.write(f"**Brand:** {Brand}")
+
+        st.write(
+            f"**Car Age:** {Car_Age} years"
+        )
+
+        st.write(
+            f"**Kilometers:** "
+            f"{Kilometers_Driven:,} km"
+        )
+
+        st.write(
+            f"**Engine:** "
+            f"{Engine_CC:,} cc"
+        )
+
+
+    with col2:
+
+        st.write(
+            f"**Mileage:** "
+            f"{Mileage_KMPL} km/l"
+        )
+
+        st.write(
+            f"**Fuel:** {Fuel_Type}"
+        )
+
+        st.write(
+            f"**Transmission:** "
+            f"{Transmission}"
+        )
+
+
+    with col3:
+
+        st.write(
+            f"**Previous Owners:** "
+            f"{Previous_Owners}"
+        )
+
+        st.write(
+            f"**Seats:** {Seats}"
+        )
+
+        st.write(
+            f"**Location:** {Location}"
+        )
+
+
+    # ========================================================
+    # RUN LANGGRAPH
+    # ========================================================
+
+    with st.spinner(
+        "🤖 AI is analyzing the car..."
+    ):
+
+        try:
+
+            result = app.invoke(
+
+                {
+                    "question": question
+                },
+
+                config={
+                    "configurable": {
+                        "thread_id":
+                            "streamlit_car_analysis"
                     }
-                )
+                }
 
-                # CAR INFORMATION
-
-                st.success(
-                    "✅ Car analysis completed successfully!"
-                )
-
-                st.divider()
-
-                st.subheader("🚗 Extracted Car Information")
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-
-                    st.write(
-                        "**Brand:**",
-                        result.get("Brand", "")
-                    )
-
-                    st.write(
-                        "**Car Age:**",
-                        result.get("Car_Age", "")
-                    )
-
-                    st.write(
-                        "**Kilometers Driven:**",
-                        f"{result.get('Kilometers_Driven', 0):,.0f} km"
-                    )
-
-                    st.write(
-                        "**Engine:**",
-                        f"{result.get('Engine_CC', 0):,.0f} cc"
-                    )
-
-                with col2:
-
-                    st.write(
-                        "**Mileage:**",
-                        f"{result.get('Mileage_KMPL', 0)} km/l"
-                    )
-
-                    st.write(
-                        "**Fuel Type:**",
-                        result.get("Fuel_Type", "")
-                    )
-
-                    st.write(
-                        "**Transmission:**",
-                        result.get("Transmission", "")
-                    )
-
-                with col3:
-
-                    st.write(
-                        "**Previous Owners:**",
-                        result.get("Previous_Owners", "")
-                    )
-
-                    st.write(
-                        "**Seats:**",
-                        result.get("Seats", "")
-                    )
-
-                    st.write(
-                        "**Location:**",
-                        result.get("Location", "")
-                    )
+            )
 
 
-                # ML PREDICTION
+            # =================================================
+            # ML PREDICTION
+            # =================================================
 
-                st.divider()
+            st.divider()
 
-                st.subheader("💰 Machine Learning Price Prediction")
+            st.subheader(
+                "💰 Machine Learning Prediction"
+            )
 
-                prediction = result.get(
-                    "prediction",
-                    0
-                )
+            prediction = result["prediction"]
 
-                st.metric(
-                    label="Predicted Used-Car Price",
-                    value=f"₹{prediction:,.2f}"
+
+            st.metric(
+                "Predicted Used-Car Price",
+                f"₹{prediction:,.2f}"
+            )
+
+
+            # =================================================
+            # WEB RESEARCH
+            # =================================================
+
+            st.divider()
+
+            st.subheader(
+                "🌐 Used-Car Research"
+            )
+
+            with st.expander(
+                "View Online Research"
+            ):
+
+                st.write(
+                    result["is_purches"]
                 )
 
 
-                # WEB RESEARCH
+            # =================================================
+            # FINAL REPORT
+            # =================================================
 
-                st.divider()
+            st.divider()
 
-                st.subheader(
-                    "🌐 Used-Car Online Research"
-                )
+            st.subheader(
+                "🤖 Final Used-Car Assessment"
+            )
 
-                research = result.get(
-                    "is_purches",
-                    ""
-                )
-
-                with st.expander(
-                    "View DuckDuckGo Research"
-                ):
-
-                    st.write(research)
+            st.markdown(
+                result["final_answer"]
+            )
 
 
-                # FINAL AI REPORT
+        except requests.exceptions.ConnectionError:
 
-                st.divider()
-
-                st.subheader(
-                    "🤖 Final Used-Car Assessment"
-                )
-
-                final_answer = result.get(
-                    "final_answer",
-                    ""
-                )
-
-                st.markdown(final_answer)
+            st.error(
+                "❌ Could not connect to the FastAPI "
+                "prediction service."
+            )
 
 
-            except Exception as e:
+        except requests.exceptions.Timeout:
 
-                st.error(
-                    "❌ An error occurred while running LangGraph."
-                )
+            st.error(
+                "⏳ The FastAPI prediction service "
+                "timed out. Please try again."
+            )
 
-                st.exception(e)
+
+        except Exception as e:
+
+            st.error(
+                "❌ An error occurred while running "
+                "the LangGraph application."
+            )
+
+            st.exception(e)
 
 
+# ============================================================
 # FOOTER
+# ============================================================
 
 st.divider()
 
 st.caption(
-    "AI Used Car Advisor | LangGraph + Groq + Machine Learning + DuckDuckGo"
+    "AI Used Car Advisor | "
+    "Streamlit + LangGraph + Groq + FastAPI + "
+    "Machine Learning + DuckDuckGo"
 )
