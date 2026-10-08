@@ -854,5 +854,5 @@ st.divider()
 st.caption(
     "AI Used Car Advisor | "
     "Streamlit + LangGraph + Groq + FastAPI + "
-    "Machine Learning + DuckDuckGo"
+    "Machine Learning Regression + DuckDuckGo | Tathagata Nath"
 )
