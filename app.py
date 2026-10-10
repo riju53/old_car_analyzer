@@ -143,10 +143,12 @@ Previous_Owners = st.sidebar.number_input(
 )
 
 
-Seats = st.sidebar.number_input(
+Seats = st.sidebar.selectbox(
     "Seats",
-    min_value=1,
-    value=7
+    [
+        5,
+        7
+    ]
 )
 
 
