@@ -440,7 +440,13 @@ Give a concise research summary.
 Do not make up specific facts if reliable information is unavailable.
 """
 
-    result = search.invoke(prompt)
+    # result = search.invoke(prompt)
+
+    # return result
+    try:
+        result = search.invoke(query)
+    except Exception as e:
+        result = f"Web search currently unavailable: {str(e)}"
 
     return result
 
